@@ -32,11 +32,36 @@ async function initializeAuth(){
  sb.auth.onAuthStateChange((_event,session)=>{account=session?.user||null});
  return sb;
 }
+const MEDFLASH_EMAIL_COOLDOWN_KEY="medflash_email_next_attempt";
+function nextEmailAttempt(){try{return Number(localStorage.getItem(MEDFLASH_EMAIL_COOLDOWN_KEY))||0}catch{return 0}}
+function saveEmailCooldown(ms){try{localStorage.setItem(MEDFLASH_EMAIL_COOLDOWN_KEY,String(Date.now()+ms))}catch{}}
+function remainingEmailMinutes(){return Math.max(1,Math.ceil((nextEmailAttempt()-Date.now())/60000))}
 async function startWorkflow(){
  const o=showWorkflow("login","Connexion sécurisée MEDFLASH");
- note(o,"Connecte-toi avec ton adresse e-mail. Un lien de connexion sera envoyé à cette adresse.");
- const email=field("Adresse e-mail","email",o);email.autocomplete="email";
- action("RECEVOIR MON LIEN",async()=>{try{await initializeAuth();const {error}=await sb.auth.signInWithOtp({email:email.value.trim(),options:{emailRedirectTo:location.origin+location.pathname,shouldCreateUser:true}});if(error)throw error;note(o,"Vérifie tes e-mails et ouvre le lien de connexion sur cet appareil.")}catch(e){showError(o,e)}},o);
+ note(o,"Une connexion par e-mail est nécessaire uniquement si aucune session active n'est enregistrée sur cet appareil.");
+ const email=field("Adresse e-mail","email",o);email.autocomplete="email";email.value=account?.email||"";
+ const send=action("RECEVOIR MON LIEN",async()=>{
+  const address=email.value.trim().toLowerCase();
+  if(!email.validity.valid||!address){note(o,"Saisis une adresse e-mail valide.");return}
+  if(Date.now()<nextEmailAttempt()){note(o,"Envoi temporairement limité. Réessaie dans environ "+remainingEmailMinutes()+" minute(s).");return}
+  send.disabled=true;send.textContent="ENVOI EN COURS…";
+  try{
+   await initializeAuth();
+   const {data:sessionData}=await sb.auth.getUser();
+   if(sessionData?.user){account=sessionData.user;await dashboard();return}
+   const {error}=await sb.auth.signInWithOtp({email:address,options:{emailRedirectTo:location.origin+location.pathname,shouldCreateUser:true}});
+   if(error)throw error;
+   saveEmailCooldown(60000);
+   note(o,"Demande envoyée. Vérifie ta boîte mail et les spams. N'envoie pas plusieurs demandes.");
+  }catch(e){
+   const message=String(e?.message||"");
+   if(e?.status===429||/rate.limit|too.many|over_email_send_rate_limit/i.test(message)){
+    saveEmailCooldown(3600000);
+    note(o,"Supabase bloque temporairement les e-mails (limite atteinte). Attends avant de réessayer. Le délai exact dépend de Supabase.");
+   }else showError(o,e);
+  }finally{send.disabled=false;send.textContent="RECEVOIR MON LIEN"}
+ },o);
+ if(Date.now()<nextEmailAttempt())note(o,"Dernière demande récente : patiente environ "+remainingEmailMinutes()+" minute(s) avant un nouvel essai.");
  action("JE SUIS DÉJÀ CONNECTÉ",async()=>{try{await initializeAuth();const {data,error}=await sb.auth.getUser();if(error||!data.user){note(o,"Aucune session active. Utilise le lien envoyé par e-mail.");return}account=data.user;await dashboard()}catch(e){showError(o,e)}},o);
 }
 async function dashboard(){
