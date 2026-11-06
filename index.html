@@ -12,54 +12,140 @@ el("screen").addEventListener("pointerup",e=>{
   if(e.clientY<=rect.top+rect.height*.12 && (e.clientX<=rect.left+rect.width*.34 || e.clientX>=rect.right-rect.width*.18))closeMedicalFullscreen(e);
 });
 
-const wfSteps=[
- ["espace-organisateur.png","Espace organisateur"],
- ["creer-festival-v2.png","Créer un festival"],
- ["verification-organisateur.png","Vérifier l'organisateur"],
- ["etapes-verification-organisateur.png","Étapes de vérification"],
- ["verification-en-attente.png","Vérification en attente"],
- ["verification-refusee.png","Vérification refusée"],
- ["corriger-demande-organisateur.png","Corriger une demande"],
- ["demande-renvoyee.png","Demande renvoyée"],
- ["organisateur-verifie.png","Organisateur vérifié"],
- ["inviter-soignant.png","Inviter un soignant"],
- ["invitation-envoyee.png","Invitation envoyée"],
- ["accepter-invitation-medicale.png","Invitation médicale"],
- ["invitation-acceptee.png","Invitation acceptée"],
- ["invitation-refusee.png","Invitation refusée"],
- ["invitation-expiree.png","Invitation expirée"],
- ["acces-medical-non-autorise.png","Accès médical non autorisé"],
- ["acces-revoque.png","Accès révoqué"]
-];
-let wfIndex=0;
-function wfShow(i){
- wfIndex=Math.max(0,Math.min(wfSteps.length-1,i));
- const [asset,title]=wfSteps[wfIndex];
- el("workflow").hidden=false;
- el("workflowPanel").style.backgroundImage='url("'+asset+'")';
- const overlay=el("workflowOverlay"),controls=el("workflowControls");
- overlay.replaceChildren();controls.replaceChildren();
- const notice=document.createElement("p");
- notice.className="warning";
- notice.textContent="PARCOURS EN PRÉPARATION — aucun compte, dossier ou accès médical n'est encore validé par un serveur.";
- overlay.append(notice);
- if(wfIndex===1||wfIndex===6){
-  const form=document.createElement("form");
-  const fields=wfIndex===1?[["Nom du festival","text"],["Lieu","text"],["Date de début","date"],["Date de fin","date"]]:[["Nom de l'organisateur","text"],["E-mail de contact","email"]];
-  for(const [label,type] of fields){const l=document.createElement("label");l.textContent=label;const inp=document.createElement("input");inp.type=type;inp.required=true;l.append(inp);form.append(l)}
-  const save=document.createElement("button");save.type="submit";save.textContent="VÉRIFIER LES CHAMPS";form.append(save);
-  const status=document.createElement("p");form.append(status);
-  form.onsubmit=e=>{e.preventDefault();status.textContent="Champs vérifiés sur cet appareil. Aucune demande n'a été envoyée : service sécurisé non configuré."};
-  overlay.append(form);
- } else if(wfIndex===9){
-  const p=document.createElement("p");p.textContent="L'envoi d'invitations est désactivé jusqu'à l'activation de l'authentification et de la validation des organisateurs.";overlay.append(p);
- } else {
-  const p=document.createElement("p");p.textContent=title+" — aperçu graphique uniquement. Cet état doit être confirmé par le service sécurisé avant d'être affiché à un utilisateur.";overlay.append(p);
- }
- const nav=(label,to)=>{const b=document.createElement("button");b.type="button";b.textContent=label;b.onclick=()=>wfShow(to);controls.append(b)};
- if(wfIndex>0)nav("← PRÉCÉDENT",wfIndex-1);
- if(wfIndex<wfSteps.length-1)nav("SUIVANT →",wfIndex+1);
+
+const SB_URL="https://gbjnbzccvuxkwearlvbd.supabase.co";
+const SB_KEY="sb_publishable_TkPYusQ1iQofLySr9wLEPA_ouws4cGg";
+let sb=null,account=null,selectedFestival=null,medicalAccess=null;
+const workflowImages={login:"espace-organisateur.png",request:"verification-organisateur.png",pending:"verification-en-attente.png",rejected:"verification-refusee.png",verified:"organisateur-verifie.png",festival:"creer-festival-v2.png",invite:"inviter-soignant.png",sent:"invitation-envoyee.png",accept:"accepter-invitation-medicale.png",accepted:"invitation-acceptee.png",declined:"invitation-refusee.png",expired:"invitation-expiree.png",denied:"acces-medical-non-autorise.png"};
+function node(tag,text,parent){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(parent)parent.append(e);return e}
+function action(label,fn,parent){const b=node("button",label,parent);b.type="button";b.onclick=fn;return b}
+function field(label,type,parent,required=true){const l=node("label",label,parent);const e=node("input",undefined,l);e.type=type;e.required=required;return e}
+function selectField(label,values,parent){const l=node("label",label,parent);const e=node("select",undefined,l);for(const [value,text] of values){const o=node("option",text,e);o.value=value}return e}
+function showWorkflow(img,title){el("workflow").hidden=false;el("medicalGate").hidden=true;el("workflowPanel").style.backgroundImage='url("'+(workflowImages[img]||workflowImages.denied)+'")';const o=el("workflowOverlay");o.replaceChildren();el("workflowControls").replaceChildren();node("p",title,o);return o}
+function note(o,message){const p=node("p",message,o);p.setAttribute("role","status");return p}
+function showError(o,e){note(o,"Erreur : "+(e?.message||"opération impossible"))}
+async function initializeAuth(){
+ if(sb)return sb;
+ const mod=await import("https://esm.sh/@supabase/supabase-js@2.80.0");
+ sb=mod.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+ const {data}=await sb.auth.getUser();account=data.user;
+ sb.auth.onAuthStateChange((_event,session)=>{account=session?.user||null});
+ return sb;
 }
-el("organizerEntry").onclick=()=>{el("medicalGate").hidden=true;wfShow(0)};
+async function startWorkflow(){
+ const o=showWorkflow("login","Connexion sécurisée MEDFLASH");
+ note(o,"Connecte-toi avec ton adresse e-mail. Un lien de connexion sera envoyé à cette adresse.");
+ const email=field("Adresse e-mail","email",o);email.autocomplete="email";
+ action("RECEVOIR MON LIEN",async()=>{try{await initializeAuth();const {error}=await sb.auth.signInWithOtp({email:email.value.trim(),options:{emailRedirectTo:location.origin+location.pathname,shouldCreateUser:true}});if(error)throw error;note(o,"Vérifie tes e-mails et ouvre le lien de connexion sur cet appareil.")}catch(e){showError(o,e)}},o);
+ action("JE SUIS DÉJÀ CONNECTÉ",async()=>{try{await initializeAuth();const {data,error}=await sb.auth.getUser();if(error||!data.user){note(o,"Aucune session active. Utilise le lien envoyé par e-mail.");return}account=data.user;await dashboard()}catch(e){showError(o,e)}},o);
+}
+async function dashboard(){
+ const o=showWorkflow("login","Espace MEDFLASH");
+ try{
+ await initializeAuth();const {data,error}=await sb.auth.getUser();if(error||!data.user){startWorkflow();return}account=data.user;
+ note(o,"Compte : "+account.email);
+ action("MES INVITATIONS MÉDICALES",listInvitations,o);
+ const {data:requests,error:reqErr}=await sb.from("organizer_requests").select("id,status,organization_name,contact_email").order("created_at",{ascending:false}).limit(1);
+ if(reqErr)throw reqErr;
+ const req=requests?.[0];
+ if(!req){action("DEMANDER LA VÉRIFICATION ORGANISATEUR",organizerRequest,o)}
+ else if(req.status==="pending"){el("workflowPanel").style.backgroundImage='url("'+workflowImages.pending+'")';note(o,"Vérification en attente. Seul un administrateur MEDFLASH peut valider cette demande.")}
+ else if(req.status==="rejected"){el("workflowPanel").style.backgroundImage='url("'+workflowImages.rejected+'")';note(o,"Demande refusée. Contacte l'administration MEDFLASH pour un réexamen.")}
+ else if(req.status==="verified"){el("workflowPanel").style.backgroundImage='url("'+workflowImages.verified+'")';note(o,"Organisateur vérifié.");action("MES FESTIVALS",listFestivals,o);action("CRÉER UN FESTIVAL",createFestival,o)}
+ action("DÉCONNEXION",async()=>{await sb.auth.signOut();account=null;medicalAccess=null;startWorkflow()},o);
+ }catch(e){showError(o,e)}
+}
+function organizerRequest(){
+ const o=showWorkflow("request","Demande de vérification organisateur");
+ const name=field("Nom de l'organisation","text",o),email=field("E-mail de contact","email",o);
+ email.value=account?.email||"";
+ action("ENVOYER MA DEMANDE",async()=>{try{if(!name.value.trim()||!email.validity.valid)throw Error("Remplis les champs requis.");const {error}=await sb.from("organizer_requests").insert({user_id:account.id,organization_name:name.value.trim(),contact_email:email.value.trim()});if(error)throw error;await dashboard()}catch(e){showError(o,e)}},o);
+ action("RETOUR",dashboard,o);
+}
+async function listFestivals(){
+ const o=showWorkflow("verified","Mes festivals");
+ const {data,error}=await sb.from("festivals").select("id,name,location,starts_at,ends_at").order("starts_at",{ascending:false});
+ if(error){showError(o,error);return}
+ for(const f of data||[])action(f.name+" — "+f.location,()=>festivalDetail(f),o);
+ action("CRÉER UN FESTIVAL",createFestival,o);action("RETOUR",dashboard,o);
+}
+function createFestival(){
+ const o=showWorkflow("festival","Créer un festival");
+ const name=field("Nom du festival","text",o),place=field("Lieu","text",o),start=field("Date et heure de début","datetime-local",o),end=field("Date et heure de fin","datetime-local",o);
+ action("ENREGISTRER LE FESTIVAL",async()=>{try{
+ if(!name.value.trim()||!place.value.trim()||!start.value||!end.value)throw Error("Complète tous les champs.");
+ const starts_at=new Date(start.value).toISOString(),ends_at=new Date(end.value).toISOString();
+ if(new Date(ends_at)<=new Date(starts_at))throw Error("La fin doit être après le début.");
+ const {error}=await sb.from("festivals").insert({organizer_id:account.id,name:name.value.trim(),location:place.value.trim(),starts_at,ends_at});
+ if(error)throw error;await listFestivals();
+ }catch(e){showError(o,e)}},o);
+ action("RETOUR",listFestivals,o);
+}
+async function festivalDetail(f){
+ selectedFestival=f;
+ const o=showWorkflow("verified","Festival : "+f.name);
+ note(o,f.location+" — "+new Date(f.starts_at).toLocaleString("fr-FR"));
+ action("INVITER UN SOIGNANT",()=>inviteCaregiver(f),o);
+ const {data,error}=await sb.from("medical_invitations").select("invited_email,invited_role,status,expires_at").eq("festival_id",f.id).order("created_at",{ascending:false});
+ if(error)showError(o,error);
+ else for(const i of data||[])note(o,i.invited_email+" — "+i.invited_role+" — "+i.status+(new Date(i.expires_at)<new Date()?" (expirée)":""));
+ action("RETOUR",listFestivals,o);
+}
+function inviteCaregiver(f){
+ const o=showWorkflow("invite","Inviter un membre du service médical");
+ const email=field("E-mail du soignant","email",o);
+ const role=selectField("Fonction",[["medecin","Médecin"],["infirmier","Infirmier"],["secouriste","Secouriste"],["autre","Autre"]],o);
+ action("CRÉER L'INVITATION",async()=>{try{
+ if(!email.validity.valid||!email.value)throw Error("Adresse e-mail invalide.");
+ const {error}=await sb.from("medical_invitations").insert({festival_id:f.id,invited_email:email.value.trim().toLowerCase(),invited_role:role.value,invited_by:account.id});
+ if(error)throw error;
+ const done=showWorkflow("sent","Invitation enregistrée");
+ note(done,"L'invitation est enregistrée pour "+email.value+". Le soignant doit se connecter à MEDFLASH avec cette adresse pour l'accepter. Aucun e-mail automatique n'est encore envoyé.");
+ action("RETOUR AU FESTIVAL",()=>festivalDetail(f),done);
+ }catch(e){showError(o,e)}},o);
+ action("RETOUR",()=>festivalDetail(f),o);
+}
+async function listInvitations(){
+ const o=showWorkflow("accept","Mes invitations médicales");
+ try{
+ const {data,error}=await sb.from("medical_invitations").select("id,festival_id,invited_role,status,expires_at,accepted_by").order("created_at",{ascending:false});
+ if(error)throw error;
+ const mine=(data||[]).filter(i=>i.accepted_by===account.id||i.status==="pending"||i.status==="declined");
+ if(!mine.length)note(o,"Aucune invitation pour cette adresse.");
+ for(const i of mine){
+ const {data:f}=await sb.from("festivals").select("name,location").eq("id",i.festival_id).maybeSingle();
+ const name=f?.name||"Festival";
+ const expired=new Date(i.expires_at)<=new Date();
+ note(o,name+" — "+i.invited_role+" — "+(expired&&i.status==="pending"?"expirée":i.status));
+ if(i.status==="pending"&&!expired){
+ action("ACCEPTER : "+name,()=>answerInvitation(i,"accepted"),o);
+ action("REFUSER : "+name,()=>answerInvitation(i,"declined"),o);
+ }
+ if(i.status==="accepted"&&i.accepted_by===account.id&&!expired)action("OUVRIR LE SERVICE MÉDICAL : "+name,()=>openMedical(i),o);
+ }
+ action("RETOUR",dashboard,o);
+ }catch(e){showError(o,e)}
+}
+async function answerInvitation(i,status){
+ const o=showWorkflow("accept","Confirmation d'invitation");
+ try{
+ const {data,error}=await sb.from("medical_invitations").update({status,accepted_by:account.id}).eq("id",i.id).eq("status","pending").select("id");
+ if(error)throw error;if(!data?.length)throw Error("Invitation expirée, utilisée ou non autorisée.");
+ const done=showWorkflow(status==="accepted"?"accepted":"declined",status==="accepted"?"Invitation acceptée":"Invitation refusée");
+ note(done,status==="accepted"?"Ton accès médical est enregistré.":"Tu as refusé l'invitation.");
+ action("MES INVITATIONS",listInvitations,done);
+ }catch(e){showError(o,e)}
+}
+async function openMedical(i){
+ const {data,error}=await sb.from("medical_invitations").select("id,status,expires_at,accepted_by").eq("id",i.id).maybeSingle();
+ if(error||!data||data.status!=="accepted"||data.accepted_by!==account.id||new Date(data.expires_at)<=new Date()){
+ const o=showWorkflow("denied","Accès médical non autorisé");note(o,"Autorisation invalide ou expirée.");return;
+ }
+ medicalAccess=i.id;
+ el("workflow").hidden=true;el("medicalGate").hidden=true;el("medicalPage").hidden=false;
+}
+el("organizerEntry").onclick=startWorkflow;
 el("workflowClose").onclick=()=>{el("workflow").hidden=true;el("medicalGate").hidden=false};
-render();</script></body></html>
+el("gatelocked").onclick=startWorkflow;
+el("medicalreturn").onclick=()=>{medicalAccess=null;el("medicalPage").hidden=true;el("landing").hidden=false};
+render();initializeAuth().catch(()=>{});</script></body></html>
