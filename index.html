@@ -44,6 +44,9 @@ async function dashboard(){
  try{
  await initializeAuth();const {data,error}=await sb.auth.getUser();if(error||!data.user){startWorkflow();return}account=data.user;
  note(o,"Compte : "+account.email);
+ const {data:isAdmin,error:adminError}=await sb.rpc("is_medflash_admin");if(adminError)throw adminError;
+ if(isAdmin){action("ACCÈS SERVICE MÉDICAL",()=>{el("workflow").hidden=true;el("medicalGate").hidden=true;el("medicalPage").hidden=false},o);action("ADMINISTRATION GÉNÉRALE",adminDashboard,o);action("MES FESTIVALS",listFestivals,o);action("CRÉER UN FESTIVAL",createFestival,o);action("DÉCONNEXION",async()=>{await sb.auth.signOut();account=null;startWorkflow()},o);return;}
+
  action("MES INVITATIONS MÉDICALES",listInvitations,o);
  const {data:requests,error:reqErr}=await sb.from("organizer_requests").select("id,status,organization_name,contact_email").order("created_at",{ascending:false}).limit(1);
  if(reqErr)throw reqErr;
@@ -144,8 +147,10 @@ async function openMedical(i){
  medicalAccess=i.id;
  el("workflow").hidden=true;el("medicalGate").hidden=true;el("medicalPage").hidden=false;
 }
-el("organizerEntry").onclick=startWorkflow;
+async function adminDashboard(){const o=showWorkflow("verified","ADMINISTRATION MEDFLASH");try{await initializeAuth();const {data:allowed,error:authError}=await sb.rpc("is_medflash_admin");if(authError||!allowed){note(o,"Accès administrateur refusé.");return}const {data:requests,error}=await sb.from("organizer_requests").select("id,organization_name,contact_email,status").order("created_at",{ascending:false});if(error)throw error;note(o,"Demandes organisateurs : "+(requests||[]).length);for(const r of requests||[]){note(o,r.organization_name+" — "+r.contact_email+" — "+r.status);if(r.status==="pending"){action("VALIDER : "+r.organization_name,()=>reviewOrganizer(r.id,"verified"),o);action("REFUSER : "+r.organization_name,()=>reviewOrganizer(r.id,"rejected"),o)}}action("TOUS LES FESTIVALS",listFestivals,o);action("CRÉER UN FESTIVAL",createFestival,o);action("RETOUR",dashboard,o)}catch(e){showError(o,e)}}
+async function reviewOrganizer(id,status){const o=showWorkflow("verified","Vérification organisateur");try{const {data:allowed,error:authError}=await sb.rpc("is_medflash_admin");if(authError||!allowed)throw Error("Accès administrateur refusé.");const {error}=await sb.from("organizer_requests").update({status,reviewed_at:new Date().toISOString()}).eq("id",id);if(error)throw error;await adminDashboard()}catch(e){showError(o,e)}}
+el("organizerEntry").onclick=async()=>{try{await initializeAuth();const {data}=await sb.auth.getUser();if(data?.user){account=data.user;await dashboard()}else startWorkflow()}catch(e){startWorkflow()}};
 el("workflowClose").onclick=()=>{el("workflow").hidden=true;el("medicalGate").hidden=false};
-el("gatelocked").onclick=startWorkflow;
+el("gatelocked").onclick=async()=>{try{await initializeAuth();const {data}=await sb.auth.getUser();if(data?.user){account=data.user;await dashboard()}else startWorkflow()}catch(e){startWorkflow()}};
 el("medicalreturn").onclick=()=>{medicalAccess=null;el("medicalPage").hidden=true;el("landing").hidden=false};
 render();initializeAuth().catch(()=>{});</script></body></html>
