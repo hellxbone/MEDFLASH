@@ -26,7 +26,7 @@ async function show(){cancel();panel.hidden=false;grid.replaceChildren();status.
 const response=await fetch('https://gbjnbzccvuxkwearlvbd.supabase.co/rest/v1/rpc/medflash_public_stats',{headers:{apikey:'sb_publishable_TkPYusQ1iQofLySr9wLEPA_ouws4cGg'}});
 if(!response.ok)throw new Error('HTTP '+response.status);
 const data=await response.json();status.textContent='Données enregistrées — actualisées à chaque ouverture';
-for(const [key,label] of [['today',"Visites aujourd’hui"],['yesterday','Visites hier'],['week','Visites cette semaine'],['visits','Visites totales'],['festival','Ouvertures festivalier'],['shares','Partages lancés'],['alerts','Alertes affichées'],['installs','Installations détectées']]){
+for(const [key,label] of [['today',"Visites aujourd’hui"],['yesterday','Visites hier'],['week','Visites cette semaine'],['visits','Visites totales'],['festival','Ouvertures festivalier'],['shares','Partages lancés'],['alerts','Alertes affichées'],['installs','Installations détectées'],['visitors','Sessions distinctes'],['sos','SOS – Appelez les secours'],['malaise','Je fais un malaise'],['bleeding','Je saigne beaucoup'],['medical_post','Accompagnez-moi au poste de secours'],['passage','Laissez-moi passer'],['share_whatsapp','Partages WhatsApp'],['share_sms','Partages SMS'],['share_copy','Liens copiés']]){
 const box=document.createElement('div'),number=document.createElement('b'),caption=document.createElement('span');number.textContent=String(data[key]??0);caption.textContent=label;box.append(number,caption);grid.append(box)}
 }catch(e){status.textContent='Statistiques indisponibles. Réessaie plus tard.'}}
 function start(){if(timer!==null)return;timer=setTimeout(show,5000)}
