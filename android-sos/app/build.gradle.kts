@@ -3,10 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 android {
-    namespace = "org.medflash.sos"
+    namespace = "io.github.hellxbone.medflash"
     compileSdk = 35
     defaultConfig {
-        applicationId = "org.medflash.sos"
+        applicationId = "io.github.hellxbone.medflash"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
