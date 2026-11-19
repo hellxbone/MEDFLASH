@@ -1,4 +1,4 @@
-package org.medflash.sos
+package io.github.hellxbone.medflash
 
 import android.Manifest
 import android.app.Activity
