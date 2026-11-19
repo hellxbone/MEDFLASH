@@ -28,6 +28,8 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.widget.FrameLayout
 import android.widget.Toast
+import android.view.Menu
+import android.view.MenuItem
 import java.util.UUID
 
 /**
@@ -66,6 +68,28 @@ class MainActivity : Activity() {
         }
     }
     private fun allowed() = prefs.getBoolean("consent", false)
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menu.add(0, 10, 0, if (allowed()) "Désactiver SOS solidaire" else "Activer SOS solidaire")
+        return true
+    }
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId != 10) return super.onOptionsItemSelected(item)
+        if (allowed()) {
+            prefs.edit().putBoolean("consent", false).apply()
+            stopScan()
+            stopAdvertise()
+            Toast.makeText(this, "SOS solidaire désactivé", Toast.LENGTH_SHORT).show()
+        } else {
+            AlertDialog.Builder(this).setTitle("SOS solidaire")
+                .setMessage("Recevoir les alertes SOS Bluetooth des personnes proches ? Portée non garantie. Vous pourrez désactiver cette fonction.")
+                .setPositiveButton("J'autorise") { _, _ ->
+                    prefs.edit().putBoolean("consent", true).apply()
+                    if (!granted()) requestPermissions(permissions(), 15) else startScan()
+                }.setNegativeButton("Non merci", null).show()
+        }
+        invalidateOptionsMenu()
+        return true
+    }
     private fun permissions(): Array<String> {
         val p = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= 31) {
@@ -88,7 +112,7 @@ class MainActivity : Activity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url
                 if (u.scheme == "tel") { startActivity(Intent(Intent.ACTION_DIAL, u)); return true }
-                if (u.host != "hellxbone.github.io") {
+                if (u.scheme != "https" || u.host != "hellxbone.github.io" || !u.path.orEmpty().startsWith("/MEDFLASH/")) {
                     startActivity(Intent(Intent.ACTION_VIEW, u)); return true
                 }
                 return false
@@ -113,7 +137,7 @@ class MainActivity : Activity() {
         }
         web.addJavascriptInterface(object {
             @JavascriptInterface fun sos(active: Boolean) {
-                runOnUiThread { if (active) startAdvertise() else stopAdvertise() }
+                runOnUiThread { if (web.url?.startsWith("https://hellxbone.github.io/MEDFLASH/") == true) { if (active) startAdvertise() else stopAdvertise() } }
             }
         }, "MedflashNative")
         setContentView(web)
