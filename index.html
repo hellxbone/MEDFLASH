@@ -40,4 +40,29 @@ star.addEventListener('blur',cancel);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)cancel()});
 document.getElementById('statsClose').addEventListener('click',()=>{panel.hidden=true});
 })();
-</script><script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}))}</script></body></html>
+</script><script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}))}</script><script>
+/* MEDFLASH : SOS par trois secousses, actif uniquement lorsque l'application est visible. */
+(function(){
+  let enabled=false, peaks=[], lastPeak=0, lastTrigger=0;
+  const threshold=17, minGap=220, windowMs=2200, cooldown=6000;
+  function activate(){enabled=true}
+  document.getElementById("enterfestival")?.addEventListener("pointerdown",activate,{once:true});
+  document.getElementById("enterfestival")?.addEventListener("keydown",activate,{once:true});
+  document.getElementById("festivalPage")?.addEventListener("pointerdown",activate,{once:true});
+  window.addEventListener("devicemotion",function(e){
+    if(!enabled||document.hidden||!document.getElementById("screen")?.hidden)return;
+    const a=e.acceleration;
+    if(!a||![a.x,a.y,a.z].every(Number.isFinite))return;
+    const force=Math.hypot(a.x,a.y,a.z), now=Date.now();
+    if(force<threshold||now-lastPeak<minGap||now-lastTrigger<cooldown)return;
+    lastPeak=now;
+    peaks=peaks.filter(t=>now-t<windowMs);
+    peaks.push(now);
+    if(peaks.length<3)return;
+    peaks=[];lastTrigger=now;
+    const sos=document.querySelector("#festivalPage .art .msg1");
+    if(sos)sos.click();
+  },{passive:true});
+  document.addEventListener("visibilitychange",()=>{peaks=[]});
+})();
+</script></body></html>
